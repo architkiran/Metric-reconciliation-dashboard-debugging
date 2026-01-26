@@ -1,0 +1,15 @@
+# OS
+.DS_Store
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Data (keep big data out of git)
+data/raw/
+data/db/
+*.duckdb
+
+# Streamlit
+.streamlit/
