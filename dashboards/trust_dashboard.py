@@ -1,3 +1,6 @@
+import os
+import subprocess
+import sys
 import duckdb
 import pandas as pd
 import streamlit as st
@@ -7,8 +10,15 @@ from pathlib import Path
 st.set_page_config(page_title="KPI Trust Dashboard", layout="wide")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DB_PATH = PROJECT_ROOT / "data" / "db" / "olist.duckdb"
 BUILD_ALL_SQL = PROJECT_ROOT / "sql" / "00_build_all.sql"
+
+# --- DuckDB path handling (CRITICAL for Streamlit Cloud) ---
+# Streamlit Cloud runs in a container where repo paths are read-only-ish for outputs.
+# Always write the DB to /tmp on Cloud.
+if os.environ.get("STREAMLIT_SERVER_RUNNING") == "true":
+    DB_PATH = Path("/tmp/olist.duckdb")
+else:
+    DB_PATH = PROJECT_ROOT / "data" / "db" / "olist.duckdb"
 
 
 def df_query(con, q: str) -> pd.DataFrame:
@@ -34,22 +44,40 @@ def ensure_tables(con) -> None:
 st.title("KPI Trust Dashboard — Metric Reconciliation")
 st.caption("Finance vs Growth revenue definitions, mismatch detection, and drilldowns (DuckDB + SQL pipelines).")
 
-# Fail loudly if DB missing
+# Sidebar (show DB path for debugging)
 st.sidebar.header("Filters")
 st.sidebar.write("DB:", str(DB_PATH))
-if not DB_PATH.exists():
-    st.error(f"DuckDB file not found at: {DB_PATH}")
-    st.stop()
 
+# --- Auto-build DuckDB if missing (Cloud + first run) ---
+# This expects your loader script to support:
+#   SAMPLE=1  -> use data/sample_raw
+#   DB_PATH   -> where to write duckdb file
+if not DB_PATH.exists():
+    st.warning(f"DuckDB not found at {DB_PATH}. Building demo DB from sample data...")
+
+    os.environ["SAMPLE"] = "1"
+    os.environ["DB_PATH"] = str(DB_PATH)
+
+    try:
+        subprocess.check_call(
+            [sys.executable, str(PROJECT_ROOT / "src" / "02_load_to_duckdb.py")]
+        )
+        st.success("Demo DB build complete.")
+    except subprocess.CalledProcessError as e:
+        st.error(f"Failed to build DuckDB database. Error: {e}")
+        st.stop()
+
+# Connect
 try:
     con = duckdb.connect(str(DB_PATH), read_only=False)
 except Exception as e:
     st.error(f"Failed to open DuckDB at {DB_PATH}: {e}")
     st.stop()
 
+# Ensure KPI tables exist (runs SQL pipelines if needed)
 ensure_tables(con)
 
-# Load mismatch first (we'll use it as the master filter)
+# Load mismatch first (master filter table)
 mismatch = df_query(con, """
     SELECT day, revenue_finance, revenue_growth, diff, status
     FROM revenue_mismatch_daily
@@ -80,7 +108,7 @@ mismatch = mismatch[
 if show_mismatch_only:
     mismatch = mismatch[mismatch["status"] == "mismatch"]
 
-# Build chart DF from filtered mismatch (keeps everything consistent)
+# Build chart DF from filtered mismatch
 df = mismatch[["day", "revenue_finance", "revenue_growth"]].copy()
 df["diff"] = df["revenue_growth"] - df["revenue_finance"]
 
@@ -126,7 +154,7 @@ with right:
 st.divider()
 st.subheader("Drilldown")
 
-# Compute top mismatch days from filtered mismatch table
+# Compute top mismatch days
 mismatch_only = mismatch[mismatch["status"] == "mismatch"].copy()
 if not mismatch_only.empty:
     mismatch_only["abs_diff"] = mismatch_only["diff"].abs()
@@ -134,7 +162,6 @@ if not mismatch_only.empty:
     drill_options = top_mismatch["day"].tolist()
     default_choice = drill_options[0]
 else:
-    # fallback: any available day
     drill_options = mismatch["day"].tolist()
     default_choice = drill_options[0] if drill_options else None
 
@@ -192,7 +219,7 @@ else:
         use_container_width=True
     )
 
-# Optional canonical section (only shows if table exists)
+# Optional canonical section
 tables = {t[0] for t in con.execute("SHOW TABLES").fetchall()}
 if "canonical_revenue_daily" in tables:
     st.divider()
@@ -204,7 +231,6 @@ if "canonical_revenue_daily" in tables:
         ORDER BY day
     """)
 
-    # Filter canonical to the same date range
     canonical = canonical[
         (pd.to_datetime(canonical["day"]).dt.date >= start) &
         (pd.to_datetime(canonical["day"]).dt.date <= end)
