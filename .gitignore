@@ -6,10 +6,11 @@ venv/
 __pycache__/
 *.pyc
 
-# Data (keep big data out of git)
+# Data (do not commit full datasets / local db)
 data/raw/
 data/db/
 *.duckdb
+dataset.zip
 
 # Streamlit
 .streamlit/
