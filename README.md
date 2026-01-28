@@ -31,8 +31,6 @@ This project simulates that **exact real-world analytics problem** and builds a 
 ✔ Lack of explainability in analytics  
 ✔ Non-reproducible pipelines  
 
-This is **not a visualization-only project** — it is a **data trust & analytics engineering system**.
-
 ---
 
 ## 🧠 Solution Overview
