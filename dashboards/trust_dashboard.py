@@ -26,13 +26,51 @@ def df_query(con, q: str) -> pd.DataFrame:
 
 
 def run_sql_file(con, path: Path) -> None:
-    sql = path.read_text()
-    statements = [s.strip() for s in sql.split(";") if s.strip()]
+    """
+    Executes a DuckDB SQL file that may contain:
+      - normal SQL statements terminated by ';'
+      - DuckDB CLI meta commands like: .read relative/path.sql
 
-    for stmt in statements:
-        con.execute(stmt)
+    This makes sql/00_build_all.sql work both in CLI and in Python/Streamlit.
+    """
+    path = path.resolve()
+    base_dir = path.parent
 
+    sql_buffer = ""
 
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+
+        # skip empty lines and comments
+        if not line or line.startswith("--"):
+            continue
+
+        # handle DuckDB CLI include command
+        if line.lower().startswith(".read "):
+            # flush any pending SQL before reading another file
+            if sql_buffer.strip():
+                con.execute(sql_buffer)
+                sql_buffer = ""
+
+            include_rel = line.split(None, 1)[1].strip().strip("'").strip('"')
+            include_path = (base_dir / include_rel).resolve()
+            run_sql_file(con, include_path)
+            continue
+
+        # accumulate SQL until ';'
+        sql_buffer += raw_line + "\n"
+        if ";" in raw_line:
+            # execute complete statement(s) in buffer
+            parts = sql_buffer.split(";")
+            for stmt in parts[:-1]:
+                stmt = stmt.strip()
+                if stmt:
+                    con.execute(stmt)
+            sql_buffer = parts[-1]  # remainder after last ';'
+
+    # flush remaining buffer
+    if sql_buffer.strip():
+        con.execute(sql_buffer)
 
 def ensure_tables(con) -> None:
     tables = {t[0] for t in con.execute("SHOW TABLES").fetchall()}
