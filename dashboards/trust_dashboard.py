@@ -26,7 +26,12 @@ def df_query(con, q: str) -> pd.DataFrame:
 
 
 def run_sql_file(con, path: Path) -> None:
-    con.execute(path.read_text())
+    sql = path.read_text()
+    statements = [s.strip() for s in sql.split(";") if s.strip()]
+
+    for stmt in statements:
+        con.execute(stmt)
+
 
 
 def ensure_tables(con) -> None:
