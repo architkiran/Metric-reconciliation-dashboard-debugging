@@ -5,6 +5,7 @@ Two internal dashboards (Finance and Growth) reported different revenue numbers 
 
 ## Findings
 - 44% of analyzed days showed revenue mismatches
+- The gap is small in dollar terms: R$5.8K gross (0.04%) on R$15.7M of revenue, with only 9 days differing by R$100 or more (see docs/impact_analysis.md)
 - Differences were driven by inconsistent metric definitions, filters, and data sources
 - Both dashboards were internally consistent but answering different business questions
 
